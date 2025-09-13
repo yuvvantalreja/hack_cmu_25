@@ -1,0 +1,119 @@
+import os
+import requests
+from requests.auth import HTTPBasicAuth
+
+SECRET_KEY = "wEqiuZNM_LZv5kyVo-7Y2S1SQU2ZDw"
+CLIENT_ID  = "VM9ZiJ-dl1ZS6GrDutmaOA"
+USERNAME   = "idkbroo0"
+
+GEMINI_KEY = "AIzaSyAXDfE1yr7viaqwrgVY_JGFnrmD_FQB_Vo"
+
+
+def gemini_reply(api_key: str, prompt: str, model: str = "gemini-1.5-flash") -> str:
+    """
+    Send a text prompt to Google's Gemini API and return the first text candidate.
+
+    api_key: your Google AI Studio / Gemini API key
+    prompt:  the user prompt
+    model:   e.g., "gemini-1.5-flash", "gemini-1.5-pro"
+    """
+    url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={api_key}"
+    payload = {"contents": [{"role": "user", "parts": [{"text": prompt}]}]}
+    r = requests.post(url, json=payload, timeout=60)
+    r.raise_for_status()
+    data = r.json()
+    try:
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError):
+        # Surface the full response if no text comes back
+        raise RuntimeError(f"Unexpected response:\n{data}")
+
+def get_reddit_posts(keywords):
+    # --- get token (same as you had) ---
+    with open("pw.txt", "r", encoding="utf-8") as f:
+        pw = f.read().strip()
+
+    auth = HTTPBasicAuth(CLIENT_ID, SECRET_KEY)
+    token_res = requests.post(
+        "https://www.reddit.com/api/v1/access_token",
+        auth=auth,
+        data={"grant_type": "password", "username": USERNAME, "password": pw},
+        headers={"User-Agent": f"Auralink/0.0.1 (by u/{USERNAME})"},
+        timeout=30,
+    )
+    token_res.raise_for_status()
+    token = token_res.json()["access_token"]
+
+    ua = f"Auralink/0.0.1 (by u/{USERNAME})"
+    headers = {"Authorization": f"bearer {token}", "User-Agent": ua}
+
+    filterstring = " AND ".join(keywords.split())
+
+    full_results = []
+    for subreddit in ["NeutralPolitics", "changemyview", "UnpopularOpinion", "Ask_Politics", 'AskReddit']:
+        # --- search r/changemyview for posts about "abortion access" ---
+        url = f"https://oauth.reddit.com/r/{subreddit}/search"
+        params = {
+            "q": f'"{keywords}" OR ({filterstring})',  # exact phrase or both words
+            "restrict_sr": 1,        # only this subreddit
+            "sort": "relevance",     # try "new" or "top" if you prefer
+            "t": "all",              # time window (try "year", "month", etc.)
+            "limit": 100,            # per page
+        }
+
+        results = []
+        after = None
+        while True:
+            if after:
+                params["after"] = after
+            res = requests.get(url, headers=headers, params=params, timeout=30)
+            res.raise_for_status()
+            payload = res.json()["data"]
+            results.extend(payload["children"])
+            after = payload.get("after")
+            if not after or len(results) >= 250:   # cap to avoid huge pulls
+                break
+
+        # print matches
+        #print("Total results:", len(results))
+        for item in results:
+            d = item["data"]
+            title = d.get("title", "")
+            body  = d.get("selftext", "") or ""
+            permalink = "https://reddit.com" + d.get("permalink", "")
+            # print(title)
+            
+            # #print(permalink)
+            # print(body[:300].replace("\n", " ") + ("..." if len(body) > 300 else ""))
+            # print("-" * 80)
+
+            full_results.append({'title': title, 'body': body.replace("\n", " "), 'permalink': permalink})
+    
+    print(f"TOTAL COMPILED RESULTS FROM ALL SUBREDDITS FOR {keywords.upper()}: {len(full_results)}")
+    print()
+    for i in range(min(5, len(full_results))):
+        
+        print("Title:", full_results[i]['title'])
+        #print("Body:", full_results[i]['body'][:300] + ("..." if len(full_results[i]['body']) > 300 else ""))
+        #print("Link:", full_results[i]['permalink'])
+        print("-" * 80)
+    
+    return full_results
+
+
+
+user_promt = input("Enter your prompt: ")
+
+gem_prompt = "The following is a user prompt. Narrow this user prompt to a specific topic such as 'abortion' or 'gun control' or 'climate change', etc. Then, conjoin a list of 4 keywords that represent the diversity in nuance in that topic in the format topic+ another word. For example, if the prompt is related to abortion, then the keywords could be 'abortion access', 'abortion legality', abortion conditions', etc. Return a comma seperate list of keywords only, For example: 'abortion access', 'abortion legality', abortion conditions'. Here is the user prompt: " + user_promt
+
+result = gemini_reply(GEMINI_KEY, gem_prompt)
+
+result = result.split(", ")
+result[-1] = result[-1].replace("\n", "")
+
+
+data = []
+for i in result:
+    data.append(get_reddit_posts(i))
+
+print("Length of data:")
