@@ -1,4 +1,5 @@
 import { useState } from 'react'
+// @ts-expect-error: No types for react-plotly.js
 import Plot from 'react-plotly.js'
 import './App.css'
 
