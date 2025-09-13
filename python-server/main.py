@@ -28,6 +28,9 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
+REDDIT_COMMENT_LIMIT = 20
+REDDIT_SLEEP_TIME = 15
+
 # Configure Gemini AI
 # Note: Set GEMINI_API_KEY environment variable with your API key
 gemini_api_key = "AIzaSyAhm41ea-AB2vRC6mlBQzoLRvvqK2Vdx4s"
@@ -191,21 +194,27 @@ def parse_reddit_submission(submission, subreddit_name, opinions) -> List[dict]:
         })
             
     # Add top comments (limit to avoid too much data)
-    try:
-        submission.comments.replace_more(limit=0)
-        sleep(0.2)
-        for comment in submission.comments[:20]:  # Reduced to 2 comments per post for speed
-            cleaned_comment = clean_text(comment.body)
-            if cleaned_comment:
-                opinions.append({
-                    'text': cleaned_comment,
-                    'score': comment.score,
-                    'subreddit': subreddit_name,
-                    'type': 'comment'
-                })
-    except Exception:
-        # Skip comments if there's an error
-        pass
+    while True:
+        try:
+            submission.comments.replace_more(limit=REDDIT_COMMENT_LIMIT)
+            break
+        except Exception as e:
+                    if "429" in str(e) or "RATELIMIT" in str(e).upper():
+                        print(f"Hit 429 while fetching comments, sleeping {REDDIT_SLEEP_TIME}s...")
+                        time.sleep(REDDIT_SLEEP_TIME)
+                    else:
+                        raise
+
+    for comment in submission.comments:  # Reduced to 2 comments per post for speed
+        cleaned_comment = clean_text(comment.body)
+        if cleaned_comment:
+            opinions.append({
+                'text': cleaned_comment,
+                'score': comment.score,
+                'subreddit': subreddit_name,
+                'type': 'comment'
+            })
+
 
 
 def scrape(subreddit_name: str, topic: str, posts_per_subreddit: int) -> List[dict]:
@@ -219,7 +228,19 @@ def scrape(subreddit_name: str, topic: str, posts_per_subreddit: int) -> List[di
         
         # Search for posts related to the topic
         threads = []
-        for submission in subreddit.search(topic, limit=posts_per_subreddit, sort='relevance'):
+        while True:
+            try:
+                search = subreddit.search(topic, limit=posts_per_subreddit, sort='relevance')
+                break
+            except Exception as e:
+                if "RATELIMIT" in str(e).upper() or "429" in str(e):
+                    logging.warning("Rate limit hit, waiting {REDDIT_SLEEP_TIME}s...")
+                    time.sleep(REDDIT_SLEEP_TIME)  # backoff
+                else:
+                    raise
+            
+        for submission in search:
+            # if submission.title and topic in submission.title
             opinions.append([])
             sleep(0.2)
             threads.append(threading.Thread(target=parse_reddit_submission, args=(submission,subreddit_name, opinions[-1])))
@@ -247,16 +268,18 @@ def scrape_parallel(topic: str, max_posts: int = 50) -> List[dict]:
     logging.info(f"Starting parallel scraping for topic: {topic}")
     
     # Subreddits to search, ordered by relevance/activity
-    subreddits = [
-        'NeutralPolitics', 'unpopularopinion', 
-        'Ask_Politics', 'AskReddit'
-    ]
+    # subreddits = [
+    #     'NeutralPolitics', 'unpopularopinion', 
+    #     'Ask_Politics', 'AskReddit'
+    # ]
+    subreddits = ['all']
     
-    posts_per_subreddit = max(3, max_posts // len(subreddits))
+    # posts_per_subreddit = max(3, max_posts // len(subreddits))
+    posts_per_subreddit = 100
     all_opinions = []
     
 
-    with ThreadPoolExecutor(max_workers=6) as executor:
+    with ThreadPoolExecutor(max_workers=1) as executor:
 
         future_to_subreddit = {
             executor.submit(scrape, subreddit, topic, posts_per_subreddit): subreddit 
@@ -277,7 +300,7 @@ def scrape_parallel(topic: str, max_posts: int = 50) -> List[dict]:
     unique_opinions = []
     for opinion in all_opinions:
         text_key = opinion['text'][:100]  # Use first 100 chars as key
-        if text_key not in seen_texts:
+        if text_key not in seen_texts and (topic in opinion['text']):
             seen_texts.add(text_key)
             unique_opinions.append(opinion)
     
@@ -285,7 +308,8 @@ def scrape_parallel(topic: str, max_posts: int = 50) -> List[dict]:
     logging.info(f"Parallel scraping completed in {end_time - start_time:.2f} seconds")
     logging.info(f"Collected {len(unique_opinions)} unique opinions from {len(all_opinions)} total")
     
-    return unique_opinions[:max_posts]
+    return unique_opinions
+    # return unique_opinions[:max_posts]
 
 def create_clusters(embeddings: np.ndarray, method: str = "kmeans", n_clusters: int = 5) -> List[int]:
     """
@@ -420,7 +444,8 @@ async def process_topic(request: ProcessRequest):
                 unique_opinions.append(opinion)
         
         # Limit to max_posts
-        opinions = unique_opinions[:request.max_posts or 50]
+        opinions = unique_opinions
+        # opinions = unique_opinions[:request.max_posts or 50]
         
         if not opinions:
             raise HTTPException(status_code=404, detail=f"No opinions found for topic: {extracted_topic}")
