@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { SparklesIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
+import ShootingStars from './ShootingStars'
 
 interface WelcomeScreenProps {
   onAnalyze: (topic: string) => void
@@ -9,17 +10,6 @@ interface WelcomeScreenProps {
 
 const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onAnalyze, isLoading, loadingStatus }) => {
   const [topic, setTopic] = useState('')
-  const [focused, setFocused] = useState(false)
-  const [backgroundIndex, setBackgroundIndex] = useState(0)
-
-  // Dynamic background gradients
-  const backgrounds = [
-    'from-blue-600 via-purple-600 to-indigo-700',
-    'from-purple-600 via-pink-600 to-red-600',
-    'from-indigo-600 via-blue-600 to-cyan-600',
-    'from-pink-600 via-rose-600 to-orange-600',
-    'from-emerald-600 via-teal-600 to-cyan-600',
-  ]
 
   const suggestions = [
     'artificial intelligence',
@@ -30,14 +20,6 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onAnalyze, isLoading, loa
     'healthcare reform',
     'education system'
   ]
-
-  // Cycle through backgrounds every 5 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setBackgroundIndex((prev) => (prev + 1) % backgrounds.length)
-    }, 5000)
-    return () => clearInterval(interval)
-  }, [backgrounds.length])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -53,8 +35,12 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onAnalyze, isLoading, loa
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-dark-bg dark:to-dark-bg-secondary">
-        <div className="text-center space-y-8 max-w-md mx-auto px-4">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-dark-bg dark:to-dark-bg-secondary relative">
+        {/* Shooting Stars Background - only in dark mode */}
+        <div className="hidden dark:block">
+          <ShootingStars />
+        </div>
+        <div className="text-center space-y-8 max-w-md mx-auto px-4 relative z-10">
           {/* Loading Animation */}
           <div className="relative">
             <div className="w-24 h-24 mx-auto">
@@ -85,14 +71,18 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onAnalyze, isLoading, loa
   }
 
   return (
-    <div className="min-h-screen bg-gray-25 dark:bg-dark-bg">
+    <div className="min-h-screen bg-gray-25 dark:bg-dark-bg relative">
+      {/* Shooting Stars Background - only in dark mode */}
+      <div className="hidden dark:block">
+        <ShootingStars />
+      </div>
       {/* Content */}
-      <div className="min-h-screen flex flex-col items-center justify-center px-6">
+      <div className="min-h-screen flex flex-col items-center justify-center px-6 relative z-10">
         <div className="w-full max-w-2xl text-center space-y-12">
           {/* Header */}
           <div className="space-y-6">
             <h1 className="text-5xl md:text-6xl font-semibold text-gray-900 dark:text-dark-text tracking-tight">
-              OpinionScope
+              Escape the Echo
             </h1>
             <p className="text-xl text-gray-600 dark:text-dark-text-secondary font-normal max-w-xl mx-auto leading-relaxed">
               Visualize public opinion on any topic
@@ -107,8 +97,6 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onAnalyze, isLoading, loa
                   type="text"
                   value={topic}
                   onChange={(e) => setTopic(e.target.value)}
-                  onFocus={() => setFocused(true)}
-                  onBlur={() => setFocused(false)}
                   placeholder="Enter any topic to explore..."
                   className="input flex-1 text-lg"
                   autoFocus
