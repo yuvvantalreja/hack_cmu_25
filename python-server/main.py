@@ -17,8 +17,10 @@ import logging
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+from time import sleep
 import os
 import google.generativeai as genai
+import threading
 
 # Fix tokenizers parallelism warning
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -173,47 +175,66 @@ def clean_text(text: str) -> str:
         return None
     return text.strip()
 
+def parse_reddit_submission(submission, subreddit_name, opinions) -> List[dict]:
+    if submission.selftext:
+        text = f"{submission.selftext}"
+    else:
+        text = submission.title
+            
+    cleaned_text = clean_text(text)
+    if cleaned_text:
+        opinions.append({
+            'text': cleaned_text,
+            'score': submission.score,
+            'subreddit': subreddit_name,
+            'type': 'post'
+        })
+            
+    # Add top comments (limit to avoid too much data)
+    try:
+        submission.comments.replace_more(limit=0)
+        sleep(0.2)
+        for comment in submission.comments[:20]:  # Reduced to 2 comments per post for speed
+            cleaned_comment = clean_text(comment.body)
+            if cleaned_comment:
+                opinions.append({
+                    'text': cleaned_comment,
+                    'score': comment.score,
+                    'subreddit': subreddit_name,
+                    'type': 'comment'
+                })
+    except Exception:
+        # Skip comments if there's an error
+        pass
+
+
 def scrape(subreddit_name: str, topic: str, posts_per_subreddit: int) -> List[dict]:
     """Scrape a single subreddit for opinions on a topic."""
     opinions = []
+    MAX_THREADS = 5
     
     try:
         logging.info(f"Scraping r/{subreddit_name} for '{topic}'")
         subreddit = reddit.subreddit(subreddit_name)
         
         # Search for posts related to the topic
+        threads = []
         for submission in subreddit.search(topic, limit=posts_per_subreddit, sort='relevance'):
-            # Add the submission title and body
-            if submission.selftext:
-                text = f"{submission.selftext}"
-            else:
-                text = submission.title
-            
-            cleaned_text = clean_text(text)
-            if cleaned_text:
-                opinions.append({
-                    'text': cleaned_text,
-                    'score': submission.score,
-                    'subreddit': subreddit_name,
-                    'type': 'post'
-                })
-            
-            # Add top comments (limit to avoid too much data)
-            try:
-                submission.comments.replace_more(limit=0)
-                for comment in submission.comments[:2]:  # Reduced to 2 comments per post for speed
-                    cleaned_comment = clean_text(comment.body)
-                    if cleaned_comment:
-                        opinions.append({
-                            'text': cleaned_comment,
-                            'score': comment.score,
-                            'subreddit': subreddit_name,
-                            'type': 'comment'
-                        })
-            except Exception:
-                # Skip comments if there's an error
-                pass
-                        
+            opinions.append([])
+            sleep(0.2)
+            threads.append(threading.Thread(target=parse_reddit_submission, args=(submission,subreddit_name, opinions[-1])))
+            threads[-1].start()
+            # if len(threads) > MAX_THREADS:
+            #     for thread in threads:
+            #         thread.join()
+
+
+        for thread in threads:
+            thread.join()
+       
+
+        opinions = [item for sublist in opinions for item in sublist]
+
     except Exception as e:
         logging.warning(f"Error scraping r/{subreddit_name}: {e}")
     
