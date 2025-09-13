@@ -57,6 +57,23 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
   onBackToSearch
 }) => {
   const { isDark } = useTheme()
+  
+  const wrapText = (input: string, maxPerLine: number = 80): string => {
+    if (!input) return ''
+    const words = input.split(' ')
+    const lines: string[] = []
+    let current = ''
+    for (const word of words) {
+      if ((current + (current ? ' ' : '') + word).length > maxPerLine) {
+        if (current) lines.push(current)
+        current = word
+      } else {
+        current = current ? current + ' ' + word : word
+      }
+    }
+    if (current) lines.push(current)
+    return lines.join('<br>')
+  }
 
   const getSimilarityColor = (similarity: number) => {
     if (similarity >= 0.8) return '#22c55e' // green
@@ -71,7 +88,7 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
       x: points.filter(p => !p.is_user_stance).map(p => p.x),
       y: points.filter(p => !p.is_user_stance).map(p => p.y),
       text: points.filter(p => !p.is_user_stance).map(p => 
-        `${p.text}<br><br>Subreddit: r/${p.subreddit}<br>Score: ${p.score}${
+        `${wrapText(p.text)}<br><br>Subreddit: r/${p.subreddit}<br>Score: ${p.score}${
           stanceResult ? `<br>Similarity to your stance: ${(p.similarity_to_user! * 100).toFixed(1)}%` : ''
         }`
       ),
@@ -101,7 +118,7 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
       x: points.filter(p => p.is_user_stance).map(p => p.x),
       y: points.filter(p => p.is_user_stance).map(p => p.y),
       text: points.filter(p => p.is_user_stance).map(p => 
-        `<b>Your Stance:</b><br>${p.text}<br><br>Positioned based on similarity to Reddit opinions`
+        `<b>Your Stance:</b><br>${wrapText(p.text)}<br><br>Positioned based on similarity to Reddit opinions`
       ),
       type: 'scatter' as const,
       mode: 'markers' as const,
@@ -290,7 +307,13 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
                         plot_bgcolor: isDark ? '#1c1c1e' : '#f9fafb',
                         paper_bgcolor: isDark ? '#1c1c1e' : 'white',
                         font: { family: 'Inter, system-ui, sans-serif', color: isDark ? '#ebebf5' : '#374151' },
-                        margin: { l: 60, r: 60, t: 60, b: 60 }
+                        margin: { l: 60, r: 60, t: 60, b: 60 },
+                        hoverlabel: {
+                          align: 'left',
+                          bgcolor: isDark ? '#2c2c2e' : '#ffffff',
+                          bordercolor: isDark ? '#3a3a3c' : '#e5e7eb',
+                          font: { size: 12, color: isDark ? '#ebebf5' : '#111827' }
+                        }
                       }}
                       style={{ width: '100%', height: '600px' }}
                       useResizeHandler
