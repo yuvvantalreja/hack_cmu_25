@@ -220,7 +220,6 @@ def parse_reddit_submission(submission, subreddit_name, opinions) -> List[dict]:
 def scrape(subreddit_name: str, topic: str, posts_per_subreddit: int) -> List[dict]:
     """Scrape a single subreddit for opinions on a topic."""
     opinions = []
-    MAX_THREADS = 5
     
     try:
         logging.info(f"Scraping r/{subreddit_name} for '{topic}'")
@@ -240,11 +239,12 @@ def scrape(subreddit_name: str, topic: str, posts_per_subreddit: int) -> List[di
                     raise
             
         for submission in search:
-            # if submission.title and topic in submission.title
-            opinions.append([])
-            sleep(0.2)
-            threads.append(threading.Thread(target=parse_reddit_submission, args=(submission,subreddit_name, opinions[-1])))
-            threads[-1].start()
+            if (submission.title and topic in submission.title) or \
+                (submission.selftext and topic in submission.selftext):
+                opinions.append([])
+                sleep(0.2)
+                threads.append(threading.Thread(target=parse_reddit_submission, args=(submission,subreddit_name, opinions[-1])))
+                threads[-1].start()
             # if len(threads) > MAX_THREADS:
             #     for thread in threads:
             #         thread.join()
@@ -268,18 +268,17 @@ def scrape_parallel(topic: str, max_posts: int = 50) -> List[dict]:
     logging.info(f"Starting parallel scraping for topic: {topic}")
     
     # Subreddits to search, ordered by relevance/activity
-    # subreddits = [
-    #     'NeutralPolitics', 'unpopularopinion', 
-    #     'Ask_Politics', 'AskReddit'
-    # ]
-    subreddits = ['all']
+    subreddits = [
+        'NeutralPolitics', 'unpopularopinion', 
+        'Ask_Politics', 'AskReddit', 'ModeratePolitics',
+        'ChangeMyView', 'TrueReddit', 'PoliticalDiscussion'
+    ]
     
-    # posts_per_subreddit = max(3, max_posts // len(subreddits))
-    posts_per_subreddit = 100
+    posts_per_subreddit = max(3, max_posts // len(subreddits))
     all_opinions = []
     
 
-    with ThreadPoolExecutor(max_workers=1) as executor:
+    with ThreadPoolExecutor(max_workers=6) as executor:
 
         future_to_subreddit = {
             executor.submit(scrape, subreddit, topic, posts_per_subreddit): subreddit 
@@ -439,7 +438,7 @@ async def process_topic(request: ProcessRequest):
         unique_opinions = []
         for opinion in all_opinions:
             text_key = opinion['text'][:100]
-            if text_key not in seen_texts:
+            if text_key not in seen_texts and topic_to_use in opinion['text']:
                 seen_texts.add(text_key)
                 unique_opinions.append(opinion)
         
